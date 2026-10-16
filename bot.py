@@ -31,4 +31,6 @@ async def on_ready():
 
 # (Cola aqui o resto dos teus comandos da whitelist)
 
-bot.run(os.getenv("DISCORD_TOKEN"))
+token = os.getenv("DISCORD_TOKEN")
+bot.run(token)
+
