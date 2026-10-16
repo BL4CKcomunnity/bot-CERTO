@@ -12,4 +12,4 @@ DISCORD_TOKEN = ""
 GITHUB_TOKEN = ""
 REPO_NAME = "BL4CKcomunnity/BL4CK-comunnity" 
 FILE_PATH = "whitelist.json"
-bot.run("O_TEU_TOKEN_AQUI")
+bot.run("")
