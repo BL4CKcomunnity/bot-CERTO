@@ -2,10 +2,12 @@ import os
 import random
 import string
 import threading
+import base64
+import json
+import requests
 from flask import Flask
 import discord
 from discord.ext import commands
-from discord import ui
 
 # 1. Servidor Web (Flask) para o Render
 app = Flask('')
@@ -27,49 +29,85 @@ def keep_alive():
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ID do teu servidor configurado
 ID_DO_SERVIDOR = 1462932885924347916
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+REPO_NAME = "BL4CKcomunnity/bot-CERTO" # Teu repositório
 
 @bot.event
 async def on_ready():
     guild = discord.Object(id=ID_DO_SERVIDOR)
-    # Sincronização direta para o teu servidor (aparece na hora)
     bot.tree.copy_global_to(guild=guild)
     await bot.tree.sync(guild=guild)
     print(f'✅ Bot conectado e comandos sincronizados no servidor!')
 
-# 3. Modal para solicitar Whitelist
-class WhitelistModal(ui.Modal, title="Solicitar Whitelist"):
-    nick = ui.TextInput(label="Teu Nick do Roblox", placeholder="Escreve aqui o teu nick exato...")
+# Função para atualizar o whitelist.json no GitHub
+def adicionar_key_github(nova_key, dias):
+    if not GITHUB_TOKEN:
+        print("❌ GITHUB_TOKEN não configurado!")
+        return False
+    
+    url = f"https://api.github.com/repos/{REPO_NAME}/contents/whitelist.json"
+    headers = {
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    
+    # Obter o ficheiro atual
+    r = requests.get(url, headers=headers)
+    if r.status_code != 200:
+        print(f"❌ Erro ao procurar whitelist.json: {r.status_code}")
+        return False
+    
+    data = r.json()
+    sha = data['sha']
+    content_encoded = data['content']
+    
+    # Descodificar JSON
+    decoded_bytes = base64.b64decode(content_encoded)
+    json_data = json.loads(decoded_bytes.decode('utf-8'))
+    
+    if "chaves" not in json_data:
+        json_data["chaves"] = []
+        
+    json_data["chaves"].append({
+        "key": nova_key,
+        "dias": dias
+    })
+    
+    # Codificar de volta
+    novo_conteudo_str = json.dumps(json_data, indent=4)
+    novo_conteudo_encoded = base64.b64encode(novo_conteudo_str.encode('utf-8')).decode('utf-8')
+    
+    payload = {
+        "message": f"Adicionada nova key {nova_key} via bot",
+        "content": novo_conteudo_encoded,
+        "sha": sha
+    }
+    
+    put_r = requests.put(url, headers=headers, json=payload)
+    return put_r.status_code in [200, 201]
 
-    async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.send_message(f"✅ Whitelist solicitada com sucesso para **{self.nick.value}**!", ephemeral=True)
-
-# 4. Vista com o Botão
-class WhitelistView(ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-
-    @ui.button(label="Solicitar Whitelist", style=discord.ButtonStyle.green, custom_id="btn_whitelist")
-    async def btn_callback(self, interaction: discord.Interaction, button: ui.Button):
-        await interaction.response.send_modal(WhitelistModal())
-
-# 5. Slash Commands
-@bot.tree.command(name="painel", description="Envia o painel de Whitelist")
-async def painel(interaction: discord.Interaction):
-    embed = discord.Embed(
-        title="🔒 Sistema de Whitelist",
-        description="Clica no botão abaixo para solicitar a tua Whitelist no servidor!",
-        color=discord.Color.blue()
-    )
-    await interaction.response.send_message(embed=embed, view=WhitelistView())
-
-@bot.tree.command(name="gerarkey", description="Gera uma key de Whitelist")
+# 3. Slash Command para criar Keys
+@bot.tree.command(name="gerarkey", description="Gera uma key temporária e guarda no GitHub")
 async def gerarkey(interaction: discord.Interaction, dias: int = 30):
     key = "BL4CK-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=8))
-    await interaction.response.send_message(f"🔑 **Key Gerada com Sucesso!**\n`{key}`\nValidade: **{dias} dias**", ephemeral=True)
+    
+    sucesso = adicionar_key_github(key, dias)
+    
+    if sucesso:
+        await interaction.response.send_message(
+            f"🔑 **Key Gerada e Registada no GitHub com Sucesso!**\n"
+            f"Código: `{key}`\n"
+            f"Validade: **{dias} dias**", 
+            ephemeral=True
+        )
+    else:
+        await interaction.response.send_message(
+            "❌ Erro ao atualizar o `whitelist.json` no GitHub. Verifica a variável `GITHUB_TOKEN` no Render.", 
+            ephemeral=True
+        )
 
-# 6. Inicialização
+# 4. Inicialização
 if __name__ == "__main__":
     keep_alive()
     token = os.getenv("DISCORD_TOKEN")
