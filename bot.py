@@ -9,7 +9,7 @@ from flask import Flask
 import discord
 from discord.ext import commands
 
-# 1. Servidor Web (Flask) para manter o bot ativo no Render
+# 1. Servidor Web (Flask) para o Render
 app = Flask('')
 
 @app.route('/')
@@ -31,7 +31,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 ID_DO_SERVIDOR = 1462932885924347916
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
-REPO_NAME = "BL4CKcomunnity/bot-CERTO"
+REPO_NAME = "BL4CKcomunnity/bot-CERTO" # Nome exato com dois 'n' conforme o teu link
 
 @bot.event
 async def on_ready():
@@ -43,8 +43,8 @@ async def on_ready():
 # Função para atualizar o whitelist.json no GitHub
 def adicionar_key_github(nova_key, nick_roblox, dias):
     if not GITHUB_TOKEN:
-        print("❌ GITHUB_TOKEN não configurado!")
-        return False
+        print("❌ GITHUB_TOKEN não configurado no Render!")
+        return "token_em_falta"
     
     url = f"https://api.github.com/repos/{REPO_NAME}/contents/whitelist.json"
     headers = {
@@ -52,31 +52,31 @@ def adicionar_key_github(nova_key, nick_roblox, dias):
         "Accept": "application/vnd.github.v3+json"
     }
     
-    # 1. Obter o ficheiro atual
+    # Obter o ficheiro atual do GitHub
     r = requests.get(url, headers=headers)
     if r.status_code != 200:
-        print(f"❌ Erro ao procurar whitelist.json: {r.status_code}")
-        return False
+        print(f"❌ Erro ao procurar whitelist.json: {r.status_code} - {r.text}")
+        return "erro_github"
     
     data = r.json()
     sha = data['sha']
     content_encoded = data['content']
     
-    # 2. Descodificar o JSON
+    # Descodificar JSON
     decoded_bytes = base64.b64decode(content_encoded)
     json_data = json.loads(decoded_bytes.decode('utf-8'))
     
     if "chaves" not in json_data:
         json_data["chaves"] = []
         
-    # Adiciona a key com o nick do roblox e os dias
+    # Adicionar a nova key
     json_data["chaves"].append({
         "key": nova_key,
         "nick": nick_roblox,
         "dias": dias
     })
     
-    # 3. Codificar de volta e fazer commit no GitHub
+    # Codificar de volta
     novo_conteudo_str = json.dumps(json_data, indent=4)
     novo_conteudo_encoded = base64.b64encode(novo_conteudo_str.encode('utf-8')).decode('utf-8')
     
@@ -87,27 +87,35 @@ def adicionar_key_github(nova_key, nick_roblox, dias):
     }
     
     put_r = requests.put(url, headers=headers, json=payload)
-    return put_r.status_code in [200, 201]
+    if put_r.status_code in [200, 201]:
+        return "sucesso"
+    else:
+        print(f"❌ Erro no commit do GitHub: {put_r.status_code} - {put_r.text}")
+        return "erro_github"
 
-# 3. Comando /gerarkey
-@bot.tree.command(name="gerarkey", description="Gera uma key temporária para um utilizador do Roblox")
-async def gerarkey(interaction: discord.Interaction, nick: str, dias: int = 30):
+# 3. Comando /gerarkey com campos claros (Nick e Dias)
+@bot.tree.command(name="gerarkey", description="Gera uma key temporária associada a um nick e dias")
+async def gerarkey(interaction: discord.Interaction, nick: str, dias: int):
     key = "BL4CK-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=8))
     
-    sucesso = adicionar_key_github(key, nick, dias)
+    resultado = adicionar_key_github(key, nick, dias)
     
-    if sucesso:
+    if resultado == "sucesso":
         await interaction.response.send_message(
-            f"🔑 **Key Gerada com Sucesso!**\n\n"
-            f"👤 **Jogador (Roblox):** `{nick}`\n"
+            f"🔑 **Key Gerada e Registada no GitHub com Sucesso!**\n\n"
+            f"👤 **Nick Roblox:** `{nick}`\n"
             f"🎫 **Key:** `{key}`\n"
-            f"⏳ **Validade:** **{dias} dias**\n\n"
-            f"*Guardado automaticamente no GitHub!*", 
+            f"⏳ **Validade:** **{dias} dias**", 
+            ephemeral=True
+        )
+    elif resultado == "token_em_falta":
+        await interaction.response.send_message(
+            "❌ Erro: A variável `GITHUB_TOKEN` não está configurada no Render.", 
             ephemeral=True
         )
     else:
         await interaction.response.send_message(
-            "❌ Erro ao atualizar o `whitelist.json` no GitHub. Verifica a variável `GITHUB_TOKEN` no Render.", 
+            "❌ Erro ao atualizar o GitHub. Confere se o Token tem permissões `repo`.", 
             ephemeral=True
         )
 
