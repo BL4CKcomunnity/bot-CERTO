@@ -40,10 +40,10 @@ async def on_ready():
     await bot.tree.sync(guild=guild)
     print(f'✅ Bot conectado e comandos sincronizados no servidor!')
 
-# Função para adicionar KEY temporária no GitHub
-def adicionar_key_github(nova_key, nick_roblox, dias):
+# Função universal para atualizar o whitelist.json e devolver o erro exato
+def atualizar_github(tipo, nick_ou_key, extra=None):
     if not GITHUB_TOKEN:
-        return "token_em_falta"
+        return "Erro: GITHUB_TOKEN não configurado no Render."
     
     url = f"https://api.github.com/repos/{REPO_NAME}/contents/whitelist.json"
     headers = {
@@ -53,112 +53,82 @@ def adicionar_key_github(nova_key, nick_roblox, dias):
     
     r = requests.get(url, headers=headers)
     if r.status_code != 200:
-        return "erro_github"
+        return f"Erro ao ler do GitHub (Código {r.status_code}): {r.text}"
     
     data = r.json()
     sha = data['sha']
     content_encoded = data['content']
     
-    json_data = json.loads(base64.b64decode(content_encoded).decode('utf-8'))
+    try:
+        json_data = json.loads(base64.b64decode(content_encoded).decode('utf-8'))
+    except Exception as e:
+        return f"Erro ao descodificar o JSON: {str(e)}"
     
-    if "chaves" not in json_data:
-        json_data["chaves"] = []
+    # Decidir o que atualizar com base no comando
+    if tipo == "key":
+        if "chaves" not in json_data:
+            json_data["chaves"] = []
+        json_data["chaves"].append({
+            "key": nick_ou_key,
+            "nick": extra["nick"],
+            "dias": extra["dias"]
+        })
+        msg_commit = f"Adicionada key temporária para {extra['nick']}"
         
-    json_data["chaves"].append({
-        "key": nova_key,
-        "nick": nick_roblox,
-        "dias": dias
-    })
-    
-    novo_conteudo_str = json.dumps(json_data, indent=4)
+    elif tipo == "perm":
+        # Vamos aceitar tanto a chave com acentos como sem para evitar falhas
+        chave_lista = "usuários_da_lista_de_permisões"
+        if chave_lista not in json_data:
+            if "usuarios_da_lista_de_permisoes" in json_data:
+                chave_lista = "usuarios_da_lista_de_permisoes"
+            else:
+                json_data[chave_lista] = []
+                
+        if nick_ou_key not in json_data[chave_lista]:
+            json_data[chave_lista].append(nick_ou_key)
+        msg_commit = f"Adicionado {nick_ou_key} à whitelist permanente"
+
+    novo_conteudo_str = json.dumps(json_data, indent=4, ensure_ascii=False)
     novo_conteudo_encoded = base64.b64encode(novo_conteudo_str.encode('utf-8')).decode('utf-8')
     
     payload = {
-        "message": f"Adicionada key para {nick_roblox} ({dias} dias)",
+        "message": msg_commit,
         "content": novo_conteudo_encoded,
         "sha": sha
     }
     
     put_r = requests.put(url, headers=headers, json=payload)
-    return "sucesso" if put_r.status_code in [200, 201] else "erro_github"
+    if put_r.status_code in [200, 201]:
+        return "SUCESSO"
+    else:
+        return f"Erro GitHub (Código {put_r.status_code}): {put_r.json().get('message', put_r.text)}"
 
-# Função para adicionar WHITELIST PERMANENTE no GitHub
-def adicionar_perm_github(nick_roblox):
-    if not GITHUB_TOKEN:
-        return "token_em_falta"
-    
-    url = f"https://api.github.com/repos/{REPO_NAME}/contents/whitelist.json"
-    headers = {
-        "Authorization": f"Bearer {GITHUB_TOKEN}",
-        "Accept": "application/vnd.github.v3+json"
-    }
-    
-    r = requests.get(url, headers=headers)
-    if r.status_code != 200:
-        return "erro_github"
-    
-    data = r.json()
-    sha = data['sha']
-    content_encoded = data['content']
-    
-    json_data = json.loads(base64.b64decode(content_encoded).decode('utf-8'))
-    
-    # Nome da chave no teu JSON: "usuários_da_lista_de_permisões"
-    chave_lista = "usuários_da_lista_de_permisões"
-    if chave_lista not in json_data:
-        json_data[chave_lista] = []
-        
-    # Evitar duplicados
-    if nick_roblox not in json_data[chave_lista]:
-        json_data[chave_lista].append(nick_roblox)
-    
-    novo_conteudo_str = json.dumps(json_data, indent=4)
-    novo_conteudo_encoded = base64.b64encode(novo_conteudo_str.encode('utf-8')).decode('utf-8')
-    
-    payload = {
-        "message": f"Adicionado {nick_roblox} à whitelist permanente",
-        "content": novo_conteudo_encoded,
-        "sha": sha
-    }
-    
-    put_r = requests.put(url, headers=headers, json=payload)
-    return "sucesso" if put_r.status_code in [200, 201] else "erro_github"
-
-# 3. Comando /gerarkey (Com Key e Dias)
+# 3. Comando /gerarkey
 @bot.tree.command(name="gerarkey", description="Gera uma key temporária associada a um nick e dias")
 async def gerarkey(interaction: discord.Interaction, nick: str, dias: int):
     key = "BL4CK-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=8))
-    resultado = adicionar_key_github(key, nick, dias)
+    resultado = atualizar_github("key", key, {"nick": nick, "dias": dias})
     
-    if resultado == "sucesso":
+    if resultado == "SUCESSO":
         await interaction.response.send_message(
-            f"🔑 **Key Gerada e Registada no GitHub!**\n\n"
-            f"👤 **Nick Roblox:** `{nick}`\n"
-            f"🎫 **Key:** `{key}`\n"
-            f"⏳ **Validade:** **{dias} dias**", 
+            f"🔑 **Key Gerada e Registada no GitHub!**\n\n👤 **Nick:** `{nick}`\n🎫 **Key:** `{key}`\n⏳ **Validade:** **{dias} dias**", 
             ephemeral=True
         )
-    elif resultado == "token_em_falta":
-        await interaction.response.send_message("❌ Erro: A variável `GITHUB_TOKEN` não está configurada no Render.", ephemeral=True)
     else:
-        await interaction.response.send_message("❌ Erro ao atualizar o GitHub.", ephemeral=True)
+        await interaction.response.send_message(f"❌ `{resultado}`", ephemeral=True)
 
-# 4. Comando /whitelist (Permanente / Infinito)
-@bot.tree.command(name="whitelist", description="Adiciona um utilizador diretamente à whitelist permanente (infinito)")
+# 4. Comando /whitelist
+@bot.tree.command(name="whitelist", description="Adiciona um utilizador diretamente à whitelist permanente")
 async def whitelist(interaction: discord.Interaction, nick: str):
-    resultado = adicionar_perm_github(nick)
+    resultado = atualizar_github("perm", nick)
     
-    if resultado == "sucesso":
+    if resultado == "SUCESSO":
         await interaction.response.send_message(
-            f"✅ **Utilizador adicionado à Whitelist Permanente!**\n\n"
-            f"👤 **Nick Roblox:** `{nick}`\n"
-            f"♾️ **Acesso:** Infinito", 
+            f"✅ **Utilizador adicionado à Whitelist Permanente!**\n\n👤 **Nick:** `{nick}`\n♾️ **Acesso:** Infinito", 
             ephemeral=True
         )
-    elif resultado == "token_em_falta":
-        await interaction.response.send_message("❌ Erro: A variável `GITHUB_TOKEN` não está configurada no Render.", ephemeral=True)
     else:
-        await interaction.response.send_message("❌ Erro ao atualizar o GitHub.", ephemeral=True)
+        await interaction.response.send_message(f"❌ `{resultado}`", ephemeral=True)
 
 # 5. Inicialização
 if __name__ == "__main__":
