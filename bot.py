@@ -31,7 +31,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 ID_DO_SERVIDOR = 1462932885924347916
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
-REPO_NAME = "BL4CKcomunnity/bot-CERTO" # Nome exato com dois 'n' conforme o teu link
+REPO_NAME = "BL4CKcomunnity/bot-CERTO"
 
 @bot.event
 async def on_ready():
@@ -40,10 +40,9 @@ async def on_ready():
     await bot.tree.sync(guild=guild)
     print(f'✅ Bot conectado e comandos sincronizados no servidor!')
 
-# Função para atualizar o whitelist.json no GitHub
+# Função para adicionar KEY temporária no GitHub
 def adicionar_key_github(nova_key, nick_roblox, dias):
     if not GITHUB_TOKEN:
-        print("❌ GITHUB_TOKEN não configurado no Render!")
         return "token_em_falta"
     
     url = f"https://api.github.com/repos/{REPO_NAME}/contents/whitelist.json"
@@ -52,74 +51,116 @@ def adicionar_key_github(nova_key, nick_roblox, dias):
         "Accept": "application/vnd.github.v3+json"
     }
     
-    # Obter o ficheiro atual do GitHub
     r = requests.get(url, headers=headers)
     if r.status_code != 200:
-        print(f"❌ Erro ao procurar whitelist.json: {r.status_code} - {r.text}")
         return "erro_github"
     
     data = r.json()
     sha = data['sha']
     content_encoded = data['content']
     
-    # Descodificar JSON
-    decoded_bytes = base64.b64decode(content_encoded)
-    json_data = json.loads(decoded_bytes.decode('utf-8'))
+    json_data = json.loads(base64.b64decode(content_encoded).decode('utf-8'))
     
     if "chaves" not in json_data:
         json_data["chaves"] = []
         
-    # Adicionar a nova key
     json_data["chaves"].append({
         "key": nova_key,
         "nick": nick_roblox,
         "dias": dias
     })
     
-    # Codificar de volta
     novo_conteudo_str = json.dumps(json_data, indent=4)
     novo_conteudo_encoded = base64.b64encode(novo_conteudo_str.encode('utf-8')).decode('utf-8')
     
     payload = {
-        "message": f"Adicionada key para {nick_roblox} ({dias} dias) via bot",
+        "message": f"Adicionada key para {nick_roblox} ({dias} dias)",
         "content": novo_conteudo_encoded,
         "sha": sha
     }
     
     put_r = requests.put(url, headers=headers, json=payload)
-    if put_r.status_code in [200, 201]:
-        return "sucesso"
-    else:
-        print(f"❌ Erro no commit do GitHub: {put_r.status_code} - {put_r.text}")
-        return "erro_github"
+    return "sucesso" if put_r.status_code in [200, 201] else "erro_github"
 
-# 3. Comando /gerarkey com campos claros (Nick e Dias)
+# Função para adicionar WHITELIST PERMANENTE no GitHub
+def adicionar_perm_github(nick_roblox):
+    if not GITHUB_TOKEN:
+        return "token_em_falta"
+    
+    url = f"https://api.github.com/repos/{REPO_NAME}/contents/whitelist.json"
+    headers = {
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    
+    r = requests.get(url, headers=headers)
+    if r.status_code != 200:
+        return "erro_github"
+    
+    data = r.json()
+    sha = data['sha']
+    content_encoded = data['content']
+    
+    json_data = json.loads(base64.b64decode(content_encoded).decode('utf-8'))
+    
+    # Nome da chave no teu JSON: "usuários_da_lista_de_permisões"
+    chave_lista = "usuários_da_lista_de_permisões"
+    if chave_lista not in json_data:
+        json_data[chave_lista] = []
+        
+    # Evitar duplicados
+    if nick_roblox not in json_data[chave_lista]:
+        json_data[chave_lista].append(nick_roblox)
+    
+    novo_conteudo_str = json.dumps(json_data, indent=4)
+    novo_conteudo_encoded = base64.b64encode(novo_conteudo_str.encode('utf-8')).decode('utf-8')
+    
+    payload = {
+        "message": f"Adicionado {nick_roblox} à whitelist permanente",
+        "content": novo_conteudo_encoded,
+        "sha": sha
+    }
+    
+    put_r = requests.put(url, headers=headers, json=payload)
+    return "sucesso" if put_r.status_code in [200, 201] else "erro_github"
+
+# 3. Comando /gerarkey (Com Key e Dias)
 @bot.tree.command(name="gerarkey", description="Gera uma key temporária associada a um nick e dias")
 async def gerarkey(interaction: discord.Interaction, nick: str, dias: int):
     key = "BL4CK-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=8))
-    
     resultado = adicionar_key_github(key, nick, dias)
     
     if resultado == "sucesso":
         await interaction.response.send_message(
-            f"🔑 **Key Gerada e Registada no GitHub com Sucesso!**\n\n"
+            f"🔑 **Key Gerada e Registada no GitHub!**\n\n"
             f"👤 **Nick Roblox:** `{nick}`\n"
             f"🎫 **Key:** `{key}`\n"
             f"⏳ **Validade:** **{dias} dias**", 
             ephemeral=True
         )
     elif resultado == "token_em_falta":
-        await interaction.response.send_message(
-            "❌ Erro: A variável `GITHUB_TOKEN` não está configurada no Render.", 
-            ephemeral=True
-        )
+        await interaction.response.send_message("❌ Erro: A variável `GITHUB_TOKEN` não está configurada no Render.", ephemeral=True)
     else:
+        await interaction.response.send_message("❌ Erro ao atualizar o GitHub.", ephemeral=True)
+
+# 4. Comando /whitelist (Permanente / Infinito)
+@bot.tree.command(name="whitelist", description="Adiciona um utilizador diretamente à whitelist permanente (infinito)")
+async def whitelist(interaction: discord.Interaction, nick: str):
+    resultado = adicionar_perm_github(nick)
+    
+    if resultado == "sucesso":
         await interaction.response.send_message(
-            "❌ Erro ao atualizar o GitHub. Confere se o Token tem permissões `repo`.", 
+            f"✅ **Utilizador adicionado à Whitelist Permanente!**\n\n"
+            f"👤 **Nick Roblox:** `{nick}`\n"
+            f"♾️ **Acesso:** Infinito", 
             ephemeral=True
         )
+    elif resultado == "token_em_falta":
+        await interaction.response.send_message("❌ Erro: A variável `GITHUB_TOKEN` não está configurada no Render.", ephemeral=True)
+    else:
+        await interaction.response.send_message("❌ Erro ao atualizar o GitHub.", ephemeral=True)
 
-# 4. Inicialização
+# 5. Inicialização
 if __name__ == "__main__":
     keep_alive()
     token = os.getenv("DISCORD_TOKEN")
