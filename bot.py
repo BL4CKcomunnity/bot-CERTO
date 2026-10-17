@@ -5,9 +5,8 @@ from discord import ui
 import random
 import string
 
-# 1. Configuração do Bot
+# 1. Configuração do Bot (sem a intenção privilegiada de message_content)
 intents = discord.Intents.default()
-intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # 2. Modal/Janela para solicitar Whitelist
