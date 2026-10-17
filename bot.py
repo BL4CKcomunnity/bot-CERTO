@@ -9,7 +9,7 @@ from flask import Flask
 import discord
 from discord.ext import commands
 
-# 1. Servidor Web (Flask) para o Render
+# 1. Servidor Web (Flask) para manter o bot ativo no Render
 app = Flask('')
 
 @app.route('/')
@@ -31,7 +31,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 ID_DO_SERVIDOR = 1462932885924347916
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
-REPO_NAME = "BL4CKcomunnity/bot-CERTO" # Teu repositório
+REPO_NAME = "BL4CKcomunnity/bot-CERTO"
 
 @bot.event
 async def on_ready():
@@ -41,7 +41,7 @@ async def on_ready():
     print(f'✅ Bot conectado e comandos sincronizados no servidor!')
 
 # Função para atualizar o whitelist.json no GitHub
-def adicionar_key_github(nova_key, dias):
+def adicionar_key_github(nova_key, nick_roblox, dias):
     if not GITHUB_TOKEN:
         print("❌ GITHUB_TOKEN não configurado!")
         return False
@@ -52,7 +52,7 @@ def adicionar_key_github(nova_key, dias):
         "Accept": "application/vnd.github.v3+json"
     }
     
-    # Obter o ficheiro atual
+    # 1. Obter o ficheiro atual
     r = requests.get(url, headers=headers)
     if r.status_code != 200:
         print(f"❌ Erro ao procurar whitelist.json: {r.status_code}")
@@ -62,24 +62,26 @@ def adicionar_key_github(nova_key, dias):
     sha = data['sha']
     content_encoded = data['content']
     
-    # Descodificar JSON
+    # 2. Descodificar o JSON
     decoded_bytes = base64.b64decode(content_encoded)
     json_data = json.loads(decoded_bytes.decode('utf-8'))
     
     if "chaves" not in json_data:
         json_data["chaves"] = []
         
+    # Adiciona a key com o nick do roblox e os dias
     json_data["chaves"].append({
         "key": nova_key,
+        "nick": nick_roblox,
         "dias": dias
     })
     
-    # Codificar de volta
+    # 3. Codificar de volta e fazer commit no GitHub
     novo_conteudo_str = json.dumps(json_data, indent=4)
     novo_conteudo_encoded = base64.b64encode(novo_conteudo_str.encode('utf-8')).decode('utf-8')
     
     payload = {
-        "message": f"Adicionada nova key {nova_key} via bot",
+        "message": f"Adicionada key para {nick_roblox} ({dias} dias) via bot",
         "content": novo_conteudo_encoded,
         "sha": sha
     }
@@ -87,18 +89,20 @@ def adicionar_key_github(nova_key, dias):
     put_r = requests.put(url, headers=headers, json=payload)
     return put_r.status_code in [200, 201]
 
-# 3. Slash Command para criar Keys
-@bot.tree.command(name="gerarkey", description="Gera uma key temporária e guarda no GitHub")
-async def gerarkey(interaction: discord.Interaction, dias: int = 30):
+# 3. Comando /gerarkey
+@bot.tree.command(name="gerarkey", description="Gera uma key temporária para um utilizador do Roblox")
+async def gerarkey(interaction: discord.Interaction, nick: str, dias: int = 30):
     key = "BL4CK-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=8))
     
-    sucesso = adicionar_key_github(key, dias)
+    sucesso = adicionar_key_github(key, nick, dias)
     
     if sucesso:
         await interaction.response.send_message(
-            f"🔑 **Key Gerada e Registada no GitHub com Sucesso!**\n"
-            f"Código: `{key}`\n"
-            f"Validade: **{dias} dias**", 
+            f"🔑 **Key Gerada com Sucesso!**\n\n"
+            f"👤 **Jogador (Roblox):** `{nick}`\n"
+            f"🎫 **Key:** `{key}`\n"
+            f"⏳ **Validade:** **{dias} dias**\n\n"
+            f"*Guardado automaticamente no GitHub!*", 
             ephemeral=True
         )
     else:
